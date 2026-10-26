@@ -1,0 +1,62 @@
+{
+  "name": "@romabeckman/hrns",
+  "version": "0.9.5",
+  "description": "CLI and SDK for harness-kit autonomous TDD orchestration",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/romabeckman/harness-kit.git",
+    "directory": "sdk"
+  },
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "hrns": "dist/cli/run.js",
+    "harness-kit": "dist/cli/run.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node -e \"const fs=require('fs');const f='dist/cli/run.js';const c=fs.readFileSync(f,'utf8');if(!c.startsWith('#!/usr/bin/env node')){fs.writeFileSync(f,'#!/usr/bin/env node\\n'+c);fs.chmodSync(f,'755')}\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:clean": "rimraf tests/e2e/.temp",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^26.6.5",
+    "eslint": "^10.12.0",
+    "playwright": "1.64.0",
+    "typescript": "^7.0.2",
+    "vitest": "5.0.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
+    "@cursor/sdk": "^1.0.35",
+    "@github/copilot-sdk": "^1.0.14",
+    "@inquirer/prompts": "^8.7.3",
+    "@vitest/coverage-v8": "5.0.3",
+    "cross-spawn": "^7.0.6",
+    "present": "^1.0.0",
+    "scripts": "^0.1.0"
+  },
+  "overrides": {
+    "undici": "^6.27.0"
+  },
+  "allowScripts": {
+    "koffi@3.2.1": true
+  }
+}
