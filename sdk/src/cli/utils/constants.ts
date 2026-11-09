@@ -1,0 +1,360 @@
+export const DEFAULT_LINE_LENGTH = 80
+export const DEFAULT_SCORE = 0.7
+export const DEFAULT_REWORKS = 2
+
+export const HELP = `
+@romabeckman/harness-kit — autonomous orchestrator
+
+USAGE
+  hrns <command> [options]
+
+COMMANDS
+  run       Start or resume an orchestration session
+  init      Initialize docs/product files and configure steering rules
+  settings  Manage settings (edit|renew|delete)
+  diagnose  Run post-orchestration harness diagnosis on pending sessions
+  qa        Run independent runtime acceptance tests or regenerate a report
+  candidate Review and apply meta-harness optimization candidates
+  report    Print development status and token usage report for the current session
+  erase     Preview and erase selected agent CLI project history
+  version   Show version
+  help      Show this help message
+
+RUN OPTIONS
+  --agent, -a <type>        Specify agent type; prompt opens when omitted (Claude CLI preselected)
+  --model, -m <name>        Specify model name for the agent
+
+ACTION (skips action prompt)
+  --reset                   Discard current session and start a new cycle
+  --resume                  Continue from last session
+
+RESET OPTIONS (all optional — omitting any triggers the interactive wizard)
+  --scope <text>            Project scope / PRD description
+  --run <id>                Generate correction scope from a completed QA run
+  --path <dir>              Add a directory to project paths (repeatable)
+  --score <0.1-1>           Acceptance score threshold (default: \${DEFAULT_SCORE})
+  --reworks <1-10>          Max rework cycles before cascade fail (default: \${DEFAULT_REWORKS})
+  --steering <text>         Additional orchestration rules
+
+RESUME OPTIONS
+  --steering <text>         Steering rules or state overrides
+
+EXECUTION MODE
+  --mode, -M <mode>         Controls which phases run and which complexity is forced:
+                              quick        — Bootstrap → Planning → Development → Memory → Deploy (skip Review)
+                              fast         — All phases, simplified planning, Tech Lead + QA review
+                              thinking     — Refinement → Bootstrap → Planning, LOW complexity [default]
+                              deep-thinking — All phases, forced to high planning and deep review
+  --complexity, -c <level>  Explicit complexity override: LOW | HIGH | AUTO
+
+SKIP OPTIONS
+  --skip-validation         Skip Phase REVIEW (code review + QA) - jump directly to TRANSITION
+  --skip-memory             Skip Phase MEMORY (project-memory) — jump directly to TRANSITION
+  --skip-deploy             Skip Phase DEPLOY (git stage/commit/push) — halt after TRANSITION
+  --refine                  Enable interactive pre-bootstrap REFINEMENT phase (default: false)
+
+OPTIONS
+  --help, -h                Show this help message
+  --version, -v             Show version
+  --debug                   Enable debug mode (expose errors, print prompts, CLI args)
+
+EXAMPLES
+  hrns run
+  hrns run --agent copilot-sdk --model gpt-4o
+  hrns run --reset --scope "Build a REST API" --path ./api --path ./web --score 0.9
+  hrns run --resume --steering "focus on security hardening"
+  hrns run --debug --reset --scope "My project"
+  hrns run --reset --scope "Fix login bug" --path ./api --mode fast
+  hrns run --reset --run orders-20260911 --mode fast
+  hrns run --reset --scope "New payment flow" --path ./api --mode slow
+  hrns run --reset --scope "My app" --path ./api --mode quick
+  hrns run --reset --scope "My app" --path ./api --complexity LOW
+  hrns run --reset --scope "My app" --path ./api --skip-deploy
+  hrns diagnose
+  hrns qa run --scope "Test the orders endpoint" --target http://localhost:3000
+  hrns candidate list
+  hrns candidate review v001
+  hrns report
+  hrns erase
+
+DOCS
+  https://github.com/romabeckman/harness-kit
+`
+
+export const HELP_RUN = `
+@romabeckman/harness-kit — hrns run
+
+USAGE
+  hrns run [options]
+
+DESCRIPTION
+  Start a new autonomous orchestration cycle or resume an existing session.
+
+RUN OPTIONS
+  --agent, -a <type>        Specify agent runner; prompt opens when omitted (Claude CLI preselected)
+  --model, -m <name>        Specify model name for the agent
+  --effort, -e <level>      Reasoning effort level (low | medium | high | xhigh)
+  --complexity, -c <level>  Explicit complexity override: LOW | HIGH | AUTO
+
+ACTION (skips action prompt)
+  --reset                   Discard current session and start a new cycle
+  --resume                  Continue from last saved session
+
+RESET OPTIONS (omitting triggers wizard when reset is chosen)
+  --scope <text>            Project scope / PRD description
+  --run <id>                Generate correction scope from a completed QA run
+  --path <dir>              Add a directory to project paths (repeatable)
+  --score <0.1-1>           Acceptance score threshold (default: ${DEFAULT_SCORE})
+  --reworks <1-10>          Max rework cycles before cascade fail (default: ${DEFAULT_REWORKS})
+  --steering <text>         Additional orchestration rules
+
+RESUME OPTIONS
+  --steering <text>         Steering rules or state overrides
+
+EXECUTION MODE
+  --mode, -M <mode>         Controls phase execution and forced complexity:
+                              quick   — Bootstrap → Planning → Development → Memory → Deploy (skip Review)
+                              fast    — All phases, simplified planning, Tech Lead + QA review
+                              thinking — Refinement → Bootstrap → Planning, LOW complexity [default]
+                              slow    — All phases, forced high planning and deep review
+  --complexity, -c <level>  Explicit complexity override: LOW | HIGH | AUTO
+
+SKIP OPTIONS
+  --skip-validation         Skip Phase REVIEW (code review + QA) — jump directly to TRANSITION
+  --skip-memory             Skip Phase MEMORY (project-memory) — jump directly to TRANSITION
+  --skip-deploy             Skip Phase DEPLOY (git stage/commit/push) — halt after TRANSITION
+  --refine                  Enable interactive pre-bootstrap REFINEMENT phase (default: false)
+
+GENERAL OPTIONS
+  --help, -h                Show this help message
+  --debug                   Enable debug mode (expose errors, print prompts and CLI args)
+
+EXAMPLES
+  hrns run
+  hrns run --diagnose
+  hrns run --agent copilot-cli --model gpt-6-luna
+  hrns run --reset --scope "Build a REST API" --path ./api --path ./web --score 0.9
+  hrns run --resume --steering "focus on security hardening"
+  hrns run --reset --scope "Fix bug" --path ./api --mode fast
+  hrns run --reset --run orders-20260911 --mode fast
+`
+
+export const HELP_INIT = `
+@romabeckman/harness-kit — hrns init
+
+USAGE
+  hrns init
+
+DESCRIPTION
+  Initialize docs/product tracking files in the current workspace and configure
+  optional steering rules across all orchestration phases via an interactive wizard.
+
+CREATED FILES
+  docs/product/
+  ├── backlog.md            # Product backlog and feature tracking
+  ├── memory.md             # Project decisions and memory
+  ├── steering-rules.md     # Phase-specific steering directives
+  └── tokens.jsonl          # Telemetry and token usage ledger
+
+OPTIONS
+  --help, -h                Show this help message
+
+EXAMPLES
+  hrns init
+`
+
+export const HELP_SETTINGS = `
+@romabeckman/harness-kit — hrns settings
+
+USAGE
+  hrns settings [action]
+
+ACTIONS
+  edit                      Open settings.json in the default editor
+  renew                     Recreate settings.json with default configuration
+  delete                    Delete existing settings.json file
+
+TARGETS
+  When an action is executed, you can select the target configuration:
+  - global                  Global config (~/.config/harness-kit/settings.json)
+  - local                   Project-specific config (.harness-kit/settings.json)
+
+OPTIONS
+  --help, -h                Show this help message
+
+EXAMPLES
+  hrns settings
+  hrns settings edit
+  hrns settings renew
+  hrns settings delete
+`
+
+export const HELP_DIAGNOSE = `
+@romabeckman/harness-kit — hrns diagnose
+
+USAGE
+  hrns diagnose [options]
+
+DESCRIPTION
+  Run post-orchestration harness diagnosis and optimization using meta-harness-agent.
+  Reads recorded sessions from docs/product/diagnose-sessions.jsonl, processes pending
+  sessions in batches of 3, and updates trace history and candidate improvements.
+
+OPTIONS
+  --agent, -a <type>        Specify agent runner; prompt opens when omitted (Claude CLI preselected)
+  --model, -m <name>        Override model name (defaults to DefaultSettings.ts diagnose model)
+  --effort, -e <level>      Override reasoning effort level (defaults to DefaultSettings.ts diagnose effort)
+  --batch-size <number>     Number of pending sessions to process per batch (default: 3)
+  --debug                   Enable debug output
+  --help, -h                Show this help message
+
+EXAMPLES
+  hrns diagnose
+  hrns diagnose --agent copilot-cli
+  hrns diagnose --model gpt-6-luna --effort xhigh
+  hrns diagnose --batch-size 5
+`
+
+export const HELP_QA = `
+@romabeckman/harness-kit — hrns qa
+
+USAGE
+  hrns qa run [options]
+  hrns qa report [--run <id>] [--output <format>] [options]
+  hrns qa exploratory [--target <url>] [--project <path>]
+  hrns qa auth [--project <path>]   Add one authentication profile interactively
+  hrns qa [options]          Alias for hrns qa run
+
+OPTIONS
+  --scope <text>           Open QA scope; omit to choose short input or editor form
+  --scenario <text>        Optional detailed scenario; repeatable
+  --project <path>         Project to inspect and test (default: current directory)
+  --agent <runner>         Agent runner; prompt opens when omitted (Claude CLI preselected)
+  --model <model>          Model override for QA phases
+  --effort <level>         Reasoning effort override for QA phases
+  --analysis               After execution, inspect evidence and add and execute material missing scenarios before reporting
+  --report                 Generate and render the report during QA run
+  --run <id>               Completed run to report; omit for interactive selection
+  --output <format>         Report output: json, html, markdown, send-to-developer (default: json)
+  --target <url>            Target application URL
+  --auth <profile>          Authentication profile from .harness-kit/auth.json
+  --profile <api|web|web-game|mobile-web|accessibility|mcp|cli|websocket|security|full>
+  --debug                   Expose runner arguments, prompts, sessions, and full errors
+
+EXPLORATORY
+  Executes every scenario from the latest version of every saved QA plan.
+  Plans run sequentially. A global JSON report is always saved under
+  docs/qa/exploratory/<id>/report.json and printed to stdout.
+
+AUTH
+  Adds one profile through a form. Choose env storage for a reference-only
+  profile or insecure storage to persist entered credentials in auth.json.
+  Insecure storage always shows a warning and requires confirmation.
+
+EXAMPLES
+  hrns qa run --scope "Test endpoint X" --target http://localhost:3000
+  hrns qa run --report --scope "Test endpoint X" --target http://localhost:3000
+  hrns qa run --scope "Validate checkout" --scenario "A valid card completes payment" --profile web
+  hrns qa run --debug --scope "Test endpoint X" --target http://localhost:3000
+  hrns qa report --run orders-20260911
+  hrns qa report --run orders-20260911 --output html
+  hrns qa report
+  hrns qa exploratory --target http://localhost:3000
+  hrns qa exploratory --auth qa-user --target http://localhost:3000
+  hrns qa auth
+`
+
+export const HELP_CANDIDATE = `
+@romabeckman/harness-kit — hrns candidate
+
+USAGE
+  hrns candidate <action> [options]
+
+DESCRIPTION
+  Review and apply meta-harness optimization candidates created in docs/harness-history/candidates/.
+
+ACTIONS
+  list, ls                  List all candidates and their promotion status
+  review [candidate_id]     Launch interactive AI runner session to review & apply candidate (default)
+  review [id] --auto        Apply candidate autonomously via LLM using phaseKey: diagnose
+
+OPTIONS
+  --agent, -a <type>        Select agent runner; interactive selection opens when omitted
+  --model, -m <name>        Override model name for autonomous promotion
+  --effort, -e <level>      Override reasoning effort level
+  --non-interactive, --auto Apply candidate autonomously; pass --agent to skip runner selection
+  --help, -h                Show this help message
+
+EXAMPLES
+  hrns candidate list
+  hrns candidate review v001
+  hrns candidate review v001 --auto
+`
+
+export const HELP_REPORT = `
+@romabeckman/harness-kit — hrns report
+
+USAGE
+  hrns report [options]
+
+DESCRIPTION
+  Print the development status report, feature progress, and detailed token usage
+  analytics aggregated from docs/product/tokens.jsonl for the current workspace.
+
+OPTIONS
+  --export <json|csv>       Export report data as JSON or CSV file (default: report-harness-kit-TIMESTAMP.<ext>)
+  --output, -o <file>       Specify custom output filename for exported report
+  --help, -h                Show this help message
+
+EXAMPLES
+  hrns report
+  hrns report --export json
+  hrns report --export csv
+  hrns report --export json --output custom-report.json
+`
+
+export const HELP_VERSION = `
+@romabeckman/harness-kit — hrns version
+
+USAGE
+  hrns version
+  hrns --version, -v
+
+DESCRIPTION
+  Display the currently installed version of @romabeckman/harness-kit SDK.
+`
+
+export const HELP_ERASE = `
+@romabeckman/harness-kit — hrns erase
+
+USAGE
+  hrns erase [--target <target>]
+
+DESCRIPTION
+  Select Claude Code, Codex, Copilot, Antigravity, or OpenCode. Shows an exact
+  deletion preview, then requires explicit confirmation whose default is no.
+  Cancellation changes nothing. Partial failures list every failed path.
+
+PRESERVED
+  Credentials, authentication, configuration, permissions, extensions, plugins,
+  skills, agents, downloaded tools, unknown files, and project-authored files.
+
+TARGETS
+  claude-code | codex | copilot | antigravity | opencode
+
+OPTIONS
+  --target <target>         Select target without target prompt
+  --help, -h                Show this help message
+`
+
+export const COMMAND_HELP: Record<string, string> = {
+  run: HELP_RUN,
+  init: HELP_INIT,
+  settings: HELP_SETTINGS,
+  diagnose: HELP_DIAGNOSE,
+  qa: HELP_QA,
+  candidate: HELP_CANDIDATE,
+  report: HELP_REPORT,
+  erase: HELP_ERASE,
+  version: HELP_VERSION,
+}
