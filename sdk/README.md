@@ -1,0 +1,580 @@
+![HarnessKit - 5-Step Engineering Cycle](../docs/assets/harness-kit-sdk-flow.png)
+
+Autonomous orchestrator SDK for [harness-kit](https://github.com/romabeckman/harness-kit). Run a single command and the full TDD loop executes unattended — scope in, backlog built, agents delegated, validation scored, memory persisted.
+
+---
+
+## How the orchestration works
+
+The orchestrator drives a feature through a fixed pipeline of phases. Each phase hands off to the next; failures trigger rework or cascade-blocking rather than silent skips.
+
+```
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │                         Project Scope                                │
+  └──────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  REFINEMENT  ·  pbb-design skill (optional)                          │
+  │  Builds PBB context → questions → answers → REFINEMENT.md            │
+  └──────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  BOOTSTRAP  ·  software-architect agent                              │
+  │  Uses scope + PBB context → writes BACKLOG.md                        │
+  └──────────────────────────────┬───────────────────────────────────────┘
+                                 │  (for each feature)
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  PLANNING  ·  scope-refinement skill                                 │
+  │  Writes spec files (user stories, tactical design, test scenarios)   │
+  │  Extracts task list into DEVELOPMENT-STATE.md                        │
+  └──────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  DEVELOPMENT  ·  tdd-orchestrator skill                              │◄──────────┐
+  │  Implements tasks in strict TDD order (red → green → refactor)       │           │
+  │  Each task must pass its tests before the next begins                │           │
+  └──────────────────────────────┬───────────────────────────────────────┘           │
+                                 │                                                   │ (rework: score < 0.7)
+                                 ▼                                                   │
+  ┌──────────────────────────────────────────────────────────────────────┐           │
+  │  REVIEW  ·  the-grumpy-tech-lead + adversarial-qa skills             │           │
+  │  Code review scores implementation quality (0–10)                    │           │
+  │  QA agent hunts security vulnerabilities and missing edge cases      │           │
+  │  Scores below threshold → feature returns to DEVELOPMENT (rework)    │───────────┘
+  └──────────────────────────────┬───────────────────────────────────────┘
+                                 │
+                                 ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  TRANSITION  ·  (no agent)                                           │
+  │  If next NOT_STARTED feature found → returns to PLANNING (loop)      │
+  │  If all features done → advances to MEMORY                           │
+  │  BLOCKED features cascade their status to dependents                 │
+  └──────┬──────────────────────────────────────────────────────┬────────┘
+         │  next feature                          all features done
+         ▼                                                      │
+  (loops to PLANNING)                                           ▼
+                                 ┌──────────────────────────────────────────────────────────────────────┐
+                                 │  MEMORY  ·  project-memory skill                                     │
+                                 │  Persists learnings, decisions, and patterns to long-term memory     │
+                                 └──────────────────────────────┬───────────────────────────────────────┘
+                                                                │
+                                                                ▼
+                                 ┌──────────────────────────────────────────────────────────────────────┐
+                                 │  DEPLOY  ·  (no agent)                                               │
+                                 │  Runs git add/commit/push for each project path                      │
+                                 │  Skippable via --skip-deploy → jumps straight to HALTED              │
+                                 └──────────────────────────────┬───────────────────────────────────────┘
+                                                                │
+                                                                ▼
+                                                            (HALTED)
+```
+
+> REFINEMENT runs before BOOTSTRAP when enabled by `--refine` or thinking modes. DEVELOPMENT → REVIEW loops per rework. A feature can cycle back from REVIEW to DEVELOPMENT up to `maxReworks` times before being marked BLOCKED. BLOCKED features cascade to dependents; FAILED features do not.
+
+---
+
+## Prerequisites
+
+```bash
+# 1. Claude Code CLI installed and authenticated
+claude --version
+
+# 2. harness-kit plugin installed
+/plugin marketplace add romabeckman/harness-kit
+```
+
+---
+
+## Installation
+
+### Option A — npx (available soon)
+
+```bash
+npx @romabeckman/hrns run
+```
+
+> If the package is not yet published to npm, use Option B or C below.
+
+### Option B — install globally
+
+```bash
+git clone https://github.com/romabeckman/harness-kit.git
+cd harness-kit/sdk
+npm install && npm run build
+npm install -g .
+```
+
+Then from any project directory:
+
+```bash
+hrns run
+```
+
+> To uninstall: `npm uninstall -g @romabeckman/hrns`
+
+### Option C — run without installing
+
+```bash
+git clone https://github.com/romabeckman/harness-kit.git
+cd harness-kit/sdk
+npm install && npm run build
+node dist/cli/run.js
+```
+
+---
+
+## CLI commands
+
+> NOTE: CLI mode is under the user's control and responsibility. The SDK CLI is designed for long-running executions.
+
+### `hrns init`
+
+Runs an interactive wizard to initialize your workspace:
+
+1. **Creates tracking files** — `BACKLOG.md`, `DEVELOPMENT-STATE.md`, `DECISIONS.md`, and `BOOTSTRAP-CONFIG.json` under `docs/product/`.
+2. **Steering wizard** — prompts for optional custom steering rules per phase (global, bootstrap, planning, implementation, review, memory).
+3. **Local settings** — prompts to create `.harness-kit/settings.json` if it does not exist.
+4. **Run follow-up** — offers to trigger `hrns run` immediately. Any arguments passed to `init` (e.g. `--agent gemini`) are forwarded automatically.
+
+### `hrns run`
+
+Starts or resumes an orchestration session. If a backlog exists on disk, it picks up exactly where the previous run stopped.
+
+### `hrns settings`
+
+Manages the `settings.json` configuration file interactively. Supports three subcommands:
+
+- `edit` — opens `settings.json` in the default text editor (creates it if missing)
+- `renew` — recreates `settings.json` with default values
+- `delete` — removes `settings.json`
+
+Prompts to target either the **global** (`~/.config/harness-kit/settings.json`) or **local** (`.harness-kit/settings.json`) file.
+
+```bash
+hrns settings           # interactive menu
+hrns settings edit      # open in editor directly
+hrns settings renew     # recreate with defaults
+hrns settings delete    # remove the file
+```
+
+### `hrns diagnose`
+
+Runs post-orchestration harness diagnosis and meta-harness optimization. It reads recorded sessions from `docs/product/diagnose-sessions.jsonl`, processes pending sessions in batches, and creates candidate skill improvements in `docs/harness-history/candidates/`.
+
+```bash
+hrns diagnose                                    # process pending sessions in default batches of 3
+hrns diagnose --agent copilot-cli                # specify runner for diagnosis
+hrns diagnose --model gpt-6-luna --effort high # override model and reasoning effort
+hrns diagnose --batch-size 5                     # process 5 sessions per batch
+```
+
+### `hrns candidate`
+
+Reviews and applies meta-harness optimization candidates generated during diagnosis.
+
+```bash
+hrns candidate list                              # list all candidate improvements and status (PROPOSED / APPLIED / PROMOTED)
+hrns candidate review <candidate_id>             # launch interactive AI runner session to review & apply
+hrns candidate review <candidate_id> --auto      # apply candidate autonomously via LLM
+```
+
+### `hrns report`
+
+Prints development status, feature progress, and token usage ledger analytics aggregated from `docs/product/tokens.jsonl` for the current session. Supports exporting machine-readable datasets in JSON or CSV. When `--export` is used, the report is saved directly to a file on your local root (e.g. `report-harness-kit-TIMESTAMP.json|csv`).
+
+```bash
+# Terminal human-readable report
+hrns report
+
+# Export report file to workspace root (report-harness-kit-TIMESTAMP.json|csv)
+hrns report --export json
+hrns report --export csv
+
+# Export with custom filename/path
+hrns report --export json --output ./reports/my-report.json
+hrns report --export csv -o ./reports/my-report.csv
+```
+
+### `hrns qa`
+
+Runs independent, agentic runtime acceptance after development. The CLI exposes `run`, `report`, `exploratory`, and the form-only `auth` helper; omitting the action is an alias for `hrns qa run`.
+
+The `run` workflow operates in four execution stages plus optional reporting:
+1. **Planning**: LLM inspects the project, preserves supplied scenario intent, maps acceptance criteria to executable scenarios, enforces risk coverage across categories (`functional`, `negative`, `boundary`, `security`, `accessibility`, `resilience`), and selects the appropriate profile (`api`, `web`, `web-game`, `mobile-web`, `accessibility`, `mcp`, `cli`, `websocket`, `security`, or `full`).
+2. **Plan validation and preflight**: Validates target URL/protocol, scenario payloads, driver availability, safety limits, and target reachability before execution.
+3. **Deterministic Execution**: Drivers execute actions and verify concrete assertions with origin boundary isolation, Curl request configuration sent through stdin (never process arguments), resolved-value request/response/output redaction, and cancellation signal handling.
+4. **Adaptive Analysis**: An evidence analysis loop evaluates observations and state transitions, discovering untested edge cases and generating bounded follow-up scenarios within explicit iteration budgets.
+5. **Optional Verified Reporting**: Enabled by `--report`; reconciles findings against actual runtime evidence, deduplicates shared root causes, calculates the deterministic risk coverage matrix (explicitly reporting tested vs untested areas), and guarantees fallback reports if LLM synthesis fails.
+
+Plans are immutably versioned under `docs/qa/plans/<planId>/<version>.json`; supplied user scope is preserved byte-for-byte in `docs/qa/plans/<planId>/SCOPE.md`, and scenario IDs use execution prefixes such as `001-health` and `002-create-order`. Run state and evidence persist under `docs/qa/runs/<runId>/`; `report.json` and `REPORT.md` are created there when reporting is enabled. Each evidence directory is prefixed by execution order (`001-<scenarioId>`, `002-<scenarioId>`, ...).
+
+```bash
+# Open scope: LLM discovers and creates required scenarios
+hrns qa run --scope "Test endpoint X" --target http://127.0.0.1:3000
+
+# Run and generate/render the report during execution
+hrns qa run --report --scope "Test endpoint X" --target http://127.0.0.1:3000
+
+# Integrated full-stack acceptance (API + Browser)
+hrns qa run --report --scope "Validate checkout workflow" --target http://127.0.0.1:3000 --profile full
+
+# Targeted security auditing
+hrns qa run --scope "Audit auth and injection boundaries" --target http://127.0.0.1:3000 --profile security
+
+# Optional detailed scenarios: LLM analyzes them and adds missing coverage
+hrns qa run --project ../web-game --scope "Validate gameplay" --scenario "Player starts a game" --scenario "Player moves and rotates a piece" --target http://127.0.0.1:3000 --profile web-game
+
+# Regenerate a report for a completed run with explicit LLM controls
+hrns qa report --run <qa-run-id> --model <model> --effort high
+
+# Execute the latest version of every saved QA plan and write one global JSON report
+hrns qa exploratory --target http://127.0.0.1:3000
+
+# Execute protected plans with a named profile from .harness-kit/auth.json
+hrns qa exploratory --auth qa-user --target http://127.0.0.1:3000
+
+# Add one authentication profile interactively
+hrns qa auth
+```
+
+For automation, supply `--scope` or one or more `--scenario` values. If scope and scenarios are omitted, `hrns qa run` opens the interactive scope flow; the actionless `hrns qa` alias can also offer saved-plan resume or a new run. Use `--profile api`, `web`, `web-game`, `mobile-web`, `accessibility`, `mcp`, `cli`, `websocket`, `security`, or `full` as an optional hint; the planning phase can infer it. Use `hrns qa auth` as a form-only helper to add exactly one named profile. Select `none`, `basic`, `bearer`, `api-key`, or `cookie`, then choose `env` (default, stores only a reference) or `insecure` (stores the entered credential directly). Insecure mode displays a warning and requires confirmation. `.harness-kit/auth.json` is Git-ignored but is not encrypted; protect it and use disposable, least-privilege credentials. Prefer environment references for CI or shared repositories. Use `--auth <profile>` to select a profile from `.harness-kit/auth.json`; when the file exists and the flag is omitted, interactive runs offer its profiles. Without `--report`, the run persists state and evidence but skips LLM report generation. Use `hrns qa report --run <qa-run-id>` to generate it later. Use `hrns qa exploratory` to execute every latest saved plan sequentially without planning or adaptive additions; the command always writes `docs/qa/exploratory/<id>/report.json`. `--target` overrides non-CLI plan targets in memory only. Browser checks require Chromium installed once with `npx playwright install chromium`. See the [Daily QA Playbook](./docs/PLAYBOOK-DAILY-QA.md).
+
+Authentication is applied only within each engine's supported boundary. API/security Curl requests and MCP requests receive resolved HTTP credentials; Curl sends its transient request configuration through stdin and redacts resolved values from request and response evidence. Playwright scopes Basic credentials to the configured target origin, applies Bearer/API-key headers only to same-origin requests, and installs cookies in the target browser context. CLI scenarios require explicit `environment` mappings in the selected auth profile and are `BLOCKED` before spawning when an authenticated profile has no mapping; CLI arguments, stdout, and stderr are redacted. WebSocket scenarios with a non-`none` auth profile are `BLOCKED` because WebSocket header authentication is not supported.
+
+### `hrns erase`
+
+Removes project-specific data generated by AI agent CLIs — cache, memory, session history, projects, and similar files. **Credentials, authentication, configuration, extensions, plugins, skills, and downloaded tools are never touched.**
+
+An exact deletion preview is shown before any file is removed. Confirmation is required and defaults to **no**. Cancellation leaves the filesystem unchanged. Partial failures list every failed path and exit with code 1.
+
+```bash
+hrns erase                          # interactive target selection
+hrns erase --target claude-code     # skip selection prompt
+hrns erase --target codex
+hrns erase --target copilot
+hrns erase --target antigravity
+hrns erase --target opencode
+```
+
+**Supported targets:** `claude-code` · `codex` · `copilot` · `antigravity` · `opencode`
+
+### `hrns version` / `hrns help`
+
+Displays version information or help text for any command:
+
+```bash
+hrns version              # show CLI version
+hrns help                 # show general help
+hrns help run             # show help for hrns run
+hrns help diagnose        # show help for hrns diagnose
+hrns help candidate       # show help for hrns candidate
+hrns help report          # show help for hrns report
+hrns help qa              # show help for independent runtime QA
+hrns help erase           # show help for hrns erase
+hrns help settings        # show help for hrns settings
+```
+
+---
+
+## CLI flags (`hrns run`)
+
+| Flag | Alias | Description | Example |
+|---|---|---|---|
+| `--agent <type>` | `-a` | Agent runner type (see table below) | `--agent copilot-sdk` |
+| `--model <name>` | `-m` | Model override for all phases | `--model gpt-4o` |
+| `--effort <level>` | `-e` | Effort level override for all phases (`low`, `medium`, `high`, `max`) | `--effort high` |
+| `--reset` | | Force reset (skip interactive prompt) | |
+| `--resume` | | Force resume (skip interactive prompt) | |
+| `--scope <text>` | | Project scope / PRD (skips editor prompt) | `--scope "REST API with JWT"` |
+| `--path <dir>` | | Project directory (repeatable) | `--path ./api --path ./web` |
+| `--score <0–1>` | | Acceptance score threshold | `--score 0.8` |
+| `--reworks <1–10>` | | Max rework cycles before cascade fail | `--reworks 3` |
+| `--steering <text>` | | Additional orchestration rules | `--steering "prefer async/await"` |
+| `--refine` | | Enable interactive pre-planning Socratic questionnaire | `--refine` |
+| `--mode <mode>` | `-M` | Execution mode: `quick`, `fast`, `thinking` (default), `deep_thinking` | `--mode thinking` |
+| `--skip-validation` | | Skip Phase C entirely — jump straight to Phase D | |
+| `--skip-memory` | | Skip Phase E entirely — jump straight to Phase F | |
+| `--skip-deploy` | | Skip DEPLOY phase — pipeline halts after Phase F | |
+| `--debug` | | Enable debug output | |
+
+> [!NOTE]
+> `--model` overrides the default for **all** phases. For per-phase model tuning, use `settings.json` instead.
+
+> [!TIP]
+> `--mode thinking` uses LOW complexity and `--mode deep_thinking` forces HIGH complexity; both enable the interactive pre-planning Socratic questionnaire (`Phase.REFINEMENT`). Use `--refine` to enable it for other modes. The grumpy tech-lead agent analyzes your project scope, surfaces architectural trade-offs into `docs/product/QUESTIONS.json`, collects human-validated choices, and consolidates them into `docs/product/REFINEMENT.md` prior to Phase A planning.
+
+> [!TIP]
+> `--skip-validation` is useful for CI speed-runs or when you want to iterate on Phase B output without paying the cost of two agent reviews. All features are marked **COMPLETED** with neutral scores (TL: 1, Adv: 1) and the run proceeds directly to Phase D (state check) and then Phase E (memory).
+
+> [!TIP]
+> `--mode quick` is the fastest cycle: it runs Bootstrap → Planning → Development → Memory → Deploy, skipping Review (Phase C). It uses LOW planning and generates only `003` and `004` spec files. Ideal for rapid prototyping.
+
+> [!TIP]
+> With AUTO complexity, planning generates `001` and `002` when `<project_paths>` contains 2+ projects, or when the scope identifies 3+ distinct integration points spanning 2+ modules and 2+ architectural layers. Count each API, database, queue/topic, third-party service, or process boundary as one integration point.
+
+> [!TIP]
+> `--mode fast` forces complexity `LOW` on Phase A (scope refinement generates only docs `003` + `004`, skipping `001`–`002`). Use it for straightforward bug fixes or minor enhancements.
+
+> [!TIP]
+> `--mode deep_thinking` forces complexity `HIGH` on Phase A, generating the full spec suite (`001`–`004`). Use it for large features or cross-domain integrations.
+
+> [!TIP]
+> `--skip-memory` skips the Phase E `project-memory` agent entirely. Use it when you want a fast cycle without writing documentation memory, for example during exploration or early prototyping.
+
+> [!TIP]
+> `--skip-deploy` skips the git stage/commit/push step. Useful when you want the orchestrator to finish implementation without touching version control.
+
+---
+
+## Agent runners
+
+Each runner is a self-contained strategy for invoking a specific AI backend. The SDK ships nine built-in runners:
+
+| Type | Binary / SDK | Default model |
+|---|---|---|
+| `claude-cli` | `claude` CLI | _(from settings)_ |
+| `claude-sdk` | `@anthropic-ai/sdk` | `anthropic.claude-5-sonnet` |
+| `antigravity-cli` | `agy` CLI | `gemini-3.8-flash` |
+| `codex-cli` | `codex` CLI | `gpt-6-sol` / `gpt-6-luna` |
+| `copilot-cli` | `copilot` CLI | _(from settings)_ |
+| `copilot-sdk` | `@github/copilot-sdk` | `gpt-6-sol` / `gpt-6-luna` |
+| `cursor-cli` | `agent` CLI | _(from settings)_ |
+| `cursor-sdk` | `@cursor/sdk` | `gpt-5.3-codex` |
+| `kiro-cli` | `kiro-cli` CLI | _(from settings)_ |
+
+### Auto-selection
+
+| Condition | Runner used |
+|---|---|
+| `ANTHROPIC_API_KEY` set | `claude-sdk` (direct API) |
+| No API key | `claude-cli` (local CLI) |
+
+### CLI shorthands
+
+```bash
+hrns run --agent codex-cli           # codex-cli
+hrns run --agent cursor-sdk          # cursor-sdk (needs CURSOR_API_KEY)
+hrns run --agent copilot-cli         # copilot-cli
+hrns run --agent cursor-cli          # cursor-cli
+hrns run --agent kiro-cli            # kiro-cli
+```
+
+---
+
+## Configuration — `settings.json`
+
+Tune model and timeout per runner and phase without touching code. Changes apply on the next run.
+
+### File locations
+
+The SDK reads from two locations and deep-merges them (project overrides global):
+
+| Scope | Path |
+|---|---|
+| **Global** | `~/.config/harness-kit/settings.json` |
+| **Project** | `<projectPath>/.harness-kit/settings.json` |
+
+The global file is created automatically on first run. You can also set `HARNESS_SETTINGS_PATH` to point to a custom path, or `XDG_CONFIG_HOME` to change the base config directory.
+
+### Schema
+
+```json
+{
+  "<runner-key>": {
+    "timeoutMs": 3600000,
+    "phases": {
+      "<phase-key>": {
+        "model": "anthropic.claude-5-sonnet",
+        "effort": "high",
+        "timeoutMs": 3600000
+      }
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `timeoutMs` | `number` | Default timeout (ms) for all phases under this runner |
+| `phases.<key>.model` | `string` | Model for this specific phase |
+| `phases.<key>.effort` | `string` | Reasoning effort: `low`, `medium`, `high`, `max` |
+| `phases.<key>.timeoutMs` | `number` | Phase-level timeout override |
+
+### Runner keys
+
+| Key | Applies to |
+|---|---|
+| `claude` | `claude-cli` and `claude-sdk` |
+| `antigravity` | `antigravity-cli` |
+| `codex` | `codex-cli` |
+| `copilot` | `copilot-cli` and `copilot-sdk` |
+| `cursor` | `cursor-cli` and `cursor-sdk` |
+| `kiro` | `kiro-cli` |
+
+### Phase keys
+
+| Key | Phase |
+|---|---|
+| `bootstrap` | Bootstrap — software-architect agent |
+| `planning` | Phase A — scope-refinement |
+| `implementation` | Phase B — tdd-orchestrator |
+| `review_tl` | Phase C — tech-lead review |
+| `review_adv` | Phase C — adversarial-qa review |
+| `memory` | Phase E — project-memory |
+| `diagnose` | Harness diagnosis — meta-harness-agent |
+| `qa_planning` | Agentic QA scenario planning |
+| `qa_analysis` | Agentic QA adaptive coverage analysis & replanning |
+| `qa_reporting` | Agentic QA final report synthesis |
+
+### Default settings
+
+```json
+{
+  "codex": {
+    "timeoutMs": 3600000,
+    "phases": {
+      "qa_planning": { "model": "gpt-6-sol", "effort": "medium" }
+    }
+  }
+}
+```
+
+This compact example shows the settings shape. See [src/settings/DefaultSettings.ts](./src/settings/DefaultSettings.ts) for every built-in runner, phase, model, effort, and timeout default.
+
+### Example — override Phase B for a project
+
+Create `.harness-kit/settings.json` inside your project root:
+
+```json
+{
+  "claude": {
+    "phases": {
+      "implementation": { "model": "claude-opus-4-8", "effort": "high" }
+    }
+  }
+}
+```
+
+Only the fields you specify are overridden — everything else falls back to defaults.
+
+---
+
+## Token report
+
+After each run, `docs/product/tokens.jsonl` is written with one entry per agent invocation. Call `tokenReport()` or use `hrns report` to print a summary:
+
+```
+harness-kit-sdk — token report
+  model:  anthropic.claude-4-6-sonnet, anthropic.claude-4-5-haiku
+────────────────────────────────────────────────────────────────────
+skill                           input   output  cache_r  cost
+────────────────────────────────────────────────────────────────────
+harness-kit:autonomous-orchestrator:bootstrap        5      586   81,124  $0.2267
+scope-refinement                2,759   14,806  793,672  $2.9909
+tdd-orchestrator                1,274   16,776 1,962,417  $2.8600
+the-grumpy-tech-lead               57    3,372  287,236  $0.5543
+adversarial-qa                     57    3,323  323,149  $0.3755
+project-memory                     13    4,684  240,743  $0.7567
+────────────────────────────────────────────────────────────────────
+TOTAL                           4,165   43,547 3,688,341  $7.7640
+  cache_read saved ~$11.0650
+```
+
+---
+
+## Build from source
+
+```bash
+cd harness-kit/sdk
+npm install
+npm run build      # compiles TypeScript → dist/
+npm test           # runs Vitest (250+ tests)
+npm run typecheck  # zero-error type check
+```
+
+---
+
+## Security considerations
+
+> [!CAUTION]
+> The harness-kit SDK executes AI agents with **elevated permissions** to enable autonomous operation. Read this section carefully before deploying.
+
+### Permission bypass flags (required for autonomous execution)
+
+Every CLI-based agent runner uses vendor-specific flags that **disable interactive permission prompts**. These flags are **necessary** for unattended autonomous execution — without them, the agent would block on confirmation prompts indefinitely. However, they grant the agent unrestricted access to the host filesystem, network, and shell.
+
+| Runner | Flag(s) | What it disables |
+|--------|---------|------------------|
+| `claude-cli` | `--permission-mode bypassPermissions` | All CLI permission confirmations |
+| `antigravity-cli` | `--dangerously-skip-permissions` | All CLI permission confirmations |
+| `codex-cli` | `--dangerously-bypass-approvals-and-sandbox` | Both approval prompts **and** the execution sandbox |
+| `cursor-cli` | `--force --trust --approve-mcps` | Confirmations, workspace trust, and MCP auto-approval |
+| `copilot-cli` | `--allow-all-tools --autopilot` | Tool restrictions and interactive mode |
+| `copilot-sdk` | `onPermissionRequest: approveAll` | SDK-level permission callbacks |
+| `kiro-cli` | `--trust-all-tools` | Tool trust confirmations |
+
+**Why these flags cannot be removed:** The orchestrator runs agents in a fully autonomous loop (Bootstrap → Planning → Development → Review → Memory). Each phase invokes an agent that must read/write files, run tests, and execute commands without human interaction. Removing these flags would require a human operator to approve every single tool call, breaking the autonomous pipeline.
+
+**Mitigations you should apply:**
+
+1. **Run in containers** — Execute the SDK inside Docker containers with restricted filesystem mounts, no network access to internal services, and resource limits. This is the strongest mitigation.
+2. **Use dedicated machines** — Do not run the SDK on machines containing sensitive credentials, production databases, or private keys.
+3. **Use Git worktrees** — The HTTP server mode already isolates each job in a Git worktree. Ensure `ALLOWED_WORKSPACES` is configured to restrict accessible paths.
+4. **Review agent output** — The orchestrator persists all agent output in `docs/product/`. Review generated code before merging.
+
+### HTTP server hardening
+
+When running the SDK as an HTTP daemon (`hrns serve`), apply these configurations:
+
+```bash
+# REQUIRED: Enable authentication (default is NoAuth — no authentication)
+AUTH_MODE=jwt                          # Options: basic, bearer, jwt, hmac
+AUTH_JWT_SECRET=your-strong-secret     # At least 32 characters
+
+# RECOMMENDED: Restrict network binding (default: 127.0.0.1)
+HOST=127.0.0.1                        # Do NOT use 0.0.0.0 without auth
+PORT=3000
+
+# RECOMMENDED: Restrict accessible project paths
+ALLOWED_WORKSPACES=/path/to/project1,/path/to/project2
+
+# RECOMMENDED: Configure project mappings
+PROJECT_MAPPINGS='{"myproject":{"path":"/path/to/project","baseBranch":"main"}}'
+```
+
+> [!WARNING]
+> Running the server without `AUTH_MODE` configured exposes all endpoints without authentication. Any client that can reach the server can submit orchestration jobs that execute AI agents with full permission bypass. **Always configure authentication in production.**
+
+> [!WARNING]
+> The SDK filters sensitive environment variables (API keys, tokens, passwords, database URLs) from child agent processes by default. However, if an agent is compromised via prompt injection, it could still attempt to access environment variables through shell commands. Use container isolation for defense-in-depth.
+
+### Prompt injection awareness
+
+The `scope` and `steeringMessage` fields in HTTP requests are incorporated into agent prompts. The SDK enforces a maximum length of 10,000 characters on the `scope` field and validates steering action outputs, but **no input sanitization can fully prevent prompt injection against LLM agents**. Treat these inputs as untrusted:
+
+- Always enable authentication on the HTTP server
+- Use JWT with `allowed_projects` claims to restrict per-user access via RBAC
+- Monitor `docs/product/tokens.jsonl` for unusual token consumption patterns
+- Review agent-generated code before merging to any protected branch
+
+### JWT authentication limitations
+
+The built-in JWT implementation supports **HS256 only** and validates the `alg` header to prevent algorithm confusion attacks. For production deployments requiring RS256, key rotation, or JWKS integration, consider placing a reverse proxy (nginx, Traefik, or a cloud API gateway) in front of the SDK server.
+
+---
+
+## Further reading
+
+- [Daily Use Playbook](./docs/PLAYBOOK-DAILY-USE.md) — real-world recipes for multi-project setups, POCs, mid-run corrections, and more
+- [Daily QA Playbook](./docs/PLAYBOOK-DAILY-QA.md) — independent API, interface, and web-game acceptance checks
+- [Agent runner architecture](./docs/feature/SDK_AGENT_RUNNER.md) — runner internals and extension points
+
+---
+
+## Repository
+
+[github.com/romabeckman/harness-kit](https://github.com/romabeckman/harness-kit)

@@ -1,0 +1,45 @@
+import {
+  IPhaseHandler,
+  BootstrapHandler,
+  RefinementHandler,
+  PlanningHandler,
+  DevelopmentHandler,
+  ReviewHandler,
+  MemoryHandler,
+  TransitionHandler,
+  DeployHandler,
+  CascadeBlockedHandler,
+} from './phases'
+
+export class ChainBuilder {
+  private handlersPhases: IPhaseHandler[] = []
+
+  addPhase(phase: IPhaseHandler): this {
+    this.handlersPhases.push(phase)
+    return this
+  }
+
+  build(): IPhaseHandler {
+    const refinement = new RefinementHandler()
+    const bootstrap = new BootstrapHandler()
+    refinement.setNext(bootstrap)
+    let tail: IPhaseHandler = bootstrap
+    const ordered = this.handlersPhases
+    for (const handler of ordered) {
+      tail = tail.setNext(handler)
+    }
+    return refinement
+  }
+
+  static buildDefault(): IPhaseHandler {
+    return new ChainBuilder()
+      .addPhase(new PlanningHandler())
+      .addPhase(new DevelopmentHandler())
+      .addPhase(new ReviewHandler())
+      .addPhase(new TransitionHandler())
+      .addPhase(new MemoryHandler())
+      .addPhase(new DeployHandler())
+      .addPhase(new CascadeBlockedHandler())
+      .build()
+  }
+}
